@@ -17,42 +17,12 @@ client = discord.Client(intents=discord.Intents.default())
 # qBittorrent session
 qb_session = requests.Session()
 
-# List of swear words to randomly select from
-SWEAR_WORDS = [
-    "damn",
-    "hell",
-    "crap",
-    "bloody",
-    "freaking",
-    "frickin'",
-    "dang",
-    "bullshit",
-    "arse",
-    "bugger",
-    "shit",
-    "bastard",
-    "son of a gun",
-    "motherlover",
-    "screw it",
-    "what the hell",
-    "jerk",
-    "git",
-    "numpty",
-    "turd",
-    "wanker",
-    "dipstick",
-    "dumbass",
-    "knobhead",
-    "pillock",
-    "prat",
-    "twat",
-    "nincompoop",
-    "tosser",
-    "tool",
-    "clown",
-    "bampot",
-    "knucklehead"
-]
+# List of swear words
+SWEAR_WORDS = ["damn", "hell", "crap", "bloody", "freaking"]
+
+# Keep track of already completed downloads and ETA notifications
+known_completed_torrents = set()
+notified_torrents = set()
 
 
 def authenticate_qbittorrent():
@@ -74,7 +44,7 @@ def get_active_downloads():
     if response.status_code == 200:
         return response.json()
     else:
-        print("Failed to fetch torrents")
+        print("Failed to fetch active torrents")
         return []
 
 
@@ -84,7 +54,7 @@ def get_completed_downloads():
     if response.status_code == 200:
         return response.json()
     else:
-        print("Failed to fetch torrents")
+        print("Failed to fetch completed torrents")
         return []
 
 
@@ -96,53 +66,61 @@ def calculate_eta(size_left, download_speed):
     return "Unknown"
 
 
+def initialize_known_completed():
+    """Initialize the list of known completed downloads at startup."""
+    global known_completed_torrents
+    completed_torrents = get_completed_downloads()
+    known_completed_torrents = {torrent["hash"] for torrent in completed_torrents}
+    print(f"Ignoring {len(known_completed_torrents)} existing completed downloads")
+
+
 @tasks.loop(seconds=30)
 async def monitor_qbittorrent():
     """Monitor qBittorrent for downloads."""
-    notified_torrents = set()  # Track notified torrents for ETA
-    completed_torrents = set()  # Track torrents already marked as completed
-
     while True:
         # Check active downloads for ETA notifications
         active_downloads = get_active_downloads()
         for torrent in active_downloads:
             torrent_name = torrent["name"]
-            if torrent_name not in notified_torrents:
-                size_left = torrent["size"] - torrent["downloaded"]
-                download_speed = torrent["dlspeed"]
+            torrent_hash = torrent["hash"]
 
-                # Notify in the first available text channel
-                for guild in client.guilds:
-                    for channel in guild.text_channels:
-                        try:
-                            await channel.send(f"Started download: **{torrent_name}**")
-                            break
-                        except discord.errors.Forbidden:
-                            continue  # Skip channels where the bot lacks permission
-
+            if torrent_hash not in notified_torrents:
                 # Wait for stabilization (90 seconds)
                 time.sleep(90)
 
-                # Re-fetch the download speed and calculate ETA
-                download_speed = get_active_downloads()[0]["dlspeed"]
-                eta = calculate_eta(size_left, download_speed)
-                for guild in client.guilds:
-                    for channel in guild.text_channels:
-                        try:
-                            await channel.send(
-                                f"Download ETA for **{torrent_name}**: {eta}"
-                            )
-                            break
-                        except discord.errors.Forbidden:
-                            continue
+                # Re-fetch torrent info for updated stats
+                active_downloads = get_active_downloads()
+                torrent_info = next(
+                    (t for t in active_downloads if t["hash"] == torrent_hash), None
+                )
+                if torrent_info:
+                    size_left = torrent_info["size"] - torrent_info["downloaded"]
+                    download_speed = torrent_info["dlspeed"]
+                    eta = calculate_eta(size_left, download_speed)
+                    num_peers = torrent_info["num_complete"]
+                    avg_speed = f"{download_speed / 1024 / 1024:.2f} MB/s"
 
-                notified_torrents.add(torrent_name)  # Mark torrent as notified
+                    for guild in client.guilds:
+                        for channel in guild.text_channels:
+                            try:
+                                await channel.send(
+                                    f"Download ETA for **{torrent_name}**: {eta}\n"
+                                    f"Average Speed: {avg_speed}\n"
+                                    f"Current Peers: {num_peers}"
+                                )
+                                break
+                            except discord.errors.Forbidden:
+                                continue
+
+                notified_torrents.add(torrent_hash)  # Mark as notified
 
         # Check completed downloads for completion notifications
         completed_downloads = get_completed_downloads()
         for torrent in completed_downloads:
             torrent_name = torrent["name"]
-            if torrent_name not in completed_torrents:
+            torrent_hash = torrent["hash"]
+
+            if torrent_hash not in known_completed_torrents:
                 swear_word = random.choice(SWEAR_WORDS)
                 for guild in client.guilds:
                     for channel in guild.text_channels:
@@ -154,7 +132,8 @@ async def monitor_qbittorrent():
                         except discord.errors.Forbidden:
                             continue
 
-                completed_torrents.add(torrent_name)  # Mark torrent as completed
+                # Mark this torrent as known
+                known_completed_torrents.add(torrent_hash)
 
         # Pause before the next loop iteration
         time.sleep(30)
@@ -165,6 +144,7 @@ async def on_ready():
     """Event triggered when the bot is ready."""
     print(f"Logged in as {client.user}")
     authenticate_qbittorrent()
+    initialize_known_completed()  # Ignore existing completed downloads
     monitor_qbittorrent.start()
 
 
