@@ -24,4 +24,4 @@ jobs:
       with:
         context: .
         push: true
-        tags: your-dockerhub-username/qbittorrent-eta-bot:latest
+        tags: philipriverscuomo/qbittorrent-eta-bot:latest
