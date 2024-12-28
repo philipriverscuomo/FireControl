@@ -3,7 +3,7 @@ name: Publish Docker Image
 on:
   push:
     branches:
-      - main  # Trigger this workflow on pushes to the main branch
+      - main  # Trigger the workflow on pushes to the main branch
 
 jobs:
   build:
@@ -24,4 +24,4 @@ jobs:
       with:
         context: .
         push: true
-        tags: philipriverscuomo/qbittorrent-eta-bot:latest
+        tags: philipriverscuomo/firecontrol:latest
