@@ -18,7 +18,7 @@ client = discord.Client(intents=discord.Intents.default())
 qb_session = requests.Session()
 
 # List of swear words
-SWEAR_WORDS = ["damn", "fucking", "cocksucking", "asslicking", "orgasmic", "boner-inducing", "panty dropping", "goddamn", "motherfucking", "unfuckingbelievable", "slap-your-mother"]
+SWEAR_WORDS = ["damn", "goddamn"]
 
 # Keep track of already completed downloads and ETA notifications
 known_completed_torrents = set()
