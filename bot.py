@@ -4,7 +4,6 @@ from discord.ext import tasks
 import asyncio
 import datetime
 import os
-import random
 
 # Environment Variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -16,9 +15,6 @@ client = discord.Client(intents=discord.Intents.default())
 
 # qBittorrent session
 qb_session = requests.Session()
-
-# List of swear words
-SWEAR_WORDS = ["damn", "goddamn"]
 
 # Keep track of already completed downloads, ETA notifications, and queued torrents
 known_completed_torrents = set()
@@ -33,9 +29,9 @@ def authenticate_qbittorrent():
         data={"username": QB_USERNAME, "password": QB_PASSWORD},
     )
     if response.status_code == 200 and response.text == "Ok.":
-        print("Authenticated with qBittorrent")
+        print("Arr, we've logged in to the qBittorrent treasure chest!")
     else:
-        print("Failed to authenticate with qBittorrent")
+        print("Blast it! Failed to log in to qBittorrent.")
         raise Exception("Authentication failed")
 
 
@@ -43,9 +39,11 @@ def get_active_downloads():
     """Fetch active torrents."""
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=downloading")
     if response.status_code == 200:
-        return response.json()
+        torrents = response.json()
+        print(f"Active Downloads: {len(torrents)}")  # Debug log
+        return torrents
     else:
-        print("Failed to fetch active torrents")
+        print("Curses! Couldn't fetch active downloads.")
         return []
 
 
@@ -53,9 +51,11 @@ def get_queued_torrents():
     """Fetch queued torrents."""
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=stalled")
     if response.status_code == 200:
-        return [torrent for torrent in response.json() if torrent.get("state") == "stalled"]
+        torrents = [torrent for torrent in response.json() if torrent.get("state") == "stalled"]
+        print(f"Queued Torrents: {len(torrents)}")  # Debug log
+        return torrents
     else:
-        print("Failed to fetch queued torrents")
+        print("Arr, the queue be hidden from us!")
         return []
 
 
@@ -63,9 +63,11 @@ def get_completed_downloads():
     """Fetch completed torrents."""
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=completed")
     if response.status_code == 200:
-        return response.json()
+        torrents = response.json()
+        print(f"Completed Torrents: {len(torrents)}")  # Debug log
+        return torrents
     else:
-        print("Failed to fetch completed torrents")
+        print("Shiver me timbers! Can't find completed torrents.")
         return []
 
 
@@ -82,7 +84,7 @@ def initialize_known_completed():
     global known_completed_torrents
     completed_torrents = get_completed_downloads()
     known_completed_torrents = {torrent["hash"] for torrent in completed_torrents}
-    print(f"Ignoring {len(known_completed_torrents)} existing completed downloads")
+    print(f"Marking {len(known_completed_torrents)} treasures as already plundered.")
 
 
 def initialize_known_queued():
@@ -90,13 +92,13 @@ def initialize_known_queued():
     global known_queued_torrents
     queued_torrents = get_queued_torrents()
     known_queued_torrents = {torrent["hash"] for torrent in queued_torrents}
-    print(f"Identified {len(known_queued_torrents)} existing queued torrents")
+    print(f"Spotted {len(known_queued_torrents)} torrents waiting in the brig.")
 
 
 @tasks.loop(seconds=30)
 async def monitor_qbittorrent():
     """Monitor qBittorrent for downloads and queue changes."""
-    # Check for new queued torrents
+    print("Scanning the horizon for queued torrents...")  # Debug log
     queued_torrents = get_queued_torrents()
     for torrent in queued_torrents:
         torrent_name = torrent["name"]
@@ -104,36 +106,33 @@ async def monitor_qbittorrent():
         queue_position = torrent.get("priority", 0)  # Assuming priority is queue position
 
         if torrent_hash not in known_queued_torrents:
+            known_queued_torrents.add(torrent_hash)  # Add first to prevent duplicate sends
             for guild in client.guilds:
                 for channel in guild.text_channels:
                     try:
                         await channel.send(
-                            f"Torrent added to queue: **{torrent_name}**\n"
+                            f"Torrent added to the brig: **{torrent_name}**\n"
                             f"Queue position: {queue_position}\n"
-                            f"Total torrents in queue: {len(queued_torrents)}"
+                            f"Total torrents in the brig: {len(queued_torrents)}"
                         )
                         break
                     except discord.errors.Forbidden:
                         continue
 
-            known_queued_torrents.add(torrent_hash)
-
-    # Remove torrents from queue list once they start downloading or are completed
     active_hashes = {torrent["hash"] for torrent in get_active_downloads()}
     completed_hashes = {torrent["hash"] for torrent in get_completed_downloads()}
+    print(f"Updating known brig prisoners, releasing {len(active_hashes | completed_hashes)}.")  # Debug log
     known_queued_torrents.difference_update(active_hashes | completed_hashes)
 
-    # Check active downloads for ETA notifications
     active_downloads = get_active_downloads()
+    print(f"Checking the fleet's active downloads: {len(active_downloads)}")  # Debug log
     for torrent in active_downloads:
         torrent_name = torrent["name"]
         torrent_hash = torrent["hash"]
 
         if torrent_hash not in notified_torrents:
-            # Wait for stabilization (90 seconds)
             await asyncio.sleep(90)
 
-            # Re-fetch torrent info for updated stats
             active_downloads = get_active_downloads()
             torrent_info = next(
                 (t for t in active_downloads if t["hash"] == torrent_hash), None
@@ -149,48 +148,45 @@ async def monitor_qbittorrent():
                     for channel in guild.text_channels:
                         try:
                             await channel.send(
-                                f"Download ETA for **{torrent_name}**: {eta}\n"
-                                f"Average Speed: {avg_speed}\n"
-                                f"Current Peers: {num_peers}"
+                                f"**{torrent_name}** be downloading!\n"
+                                f"ETA: {eta}\n"
+                                f"Speed: {avg_speed}\n"
+                                f"Mateys connected: {num_peers}"
                             )
                             break
                         except discord.errors.Forbidden:
                             continue
 
-            notified_torrents.add(torrent_hash)  # Mark as notified
+            notified_torrents.add(torrent_hash)
 
-    # Check completed downloads for completion notifications
     completed_downloads = get_completed_downloads()
+    print(f"Scanning completed treasures: {len(completed_downloads)}")  # Debug log
     for torrent in completed_downloads:
         torrent_name = torrent["name"]
         torrent_hash = torrent["hash"]
 
         if torrent_hash not in known_completed_torrents:
-            swear_word = random.choice(SWEAR_WORDS)
             for guild in client.guilds:
                 for channel in guild.text_channels:
                     try:
                         await channel.send(
-                            f"Download complete: **{torrent_name}**. What a {swear_word} masterpiece!"
+                            f"**{torrent_name}** be done! Treasure plundered successfully! 🏴‍☠️"
                         )
                         break
                     except discord.errors.Forbidden:
                         continue
 
-            # Mark this torrent as known
             known_completed_torrents.add(torrent_hash)
 
-    # Pause before the next loop iteration
     await asyncio.sleep(30)
 
 
 @client.event
 async def on_ready():
-    """Event triggered when the bot is ready."""
-    print(f"Logged in as {client.user}")
+    print(f"Aye aye, captain! Logged in as {client.user}")
     authenticate_qbittorrent()
-    initialize_known_completed()  # Ignore existing completed downloads
-    initialize_known_queued()  # Initialize queued torrents
+    initialize_known_completed()
+    initialize_known_queued()
     monitor_qbittorrent.start()
 
 
