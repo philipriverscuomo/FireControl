@@ -4,6 +4,18 @@ from discord.ext import tasks
 import asyncio
 import datetime
 import os
+import logging
+import sys
+
+# Set up logging to stdout
+logging.basicConfig(
+    stream=sys.stdout,  # Redirect logs to standard output
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# Redirect print statements to logging.debug
+print = logging.debug
 
 # Environment Variables
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
