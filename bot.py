@@ -53,7 +53,7 @@ def get_queued_torrents():
     """Fetch queued torrents."""
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=stalled")
     if response.status_code == 200:
-        return response.json()
+        return [torrent for torrent in response.json() if torrent.get("state") == "stalled"]
     else:
         print("Failed to fetch queued torrents")
         return []
@@ -117,6 +117,11 @@ async def monitor_qbittorrent():
                         continue
 
             known_queued_torrents.add(torrent_hash)
+
+    # Remove torrents from queue list once they start downloading or are completed
+    active_hashes = {torrent["hash"] for torrent in get_active_downloads()}
+    completed_hashes = {torrent["hash"] for torrent in get_completed_downloads()}
+    known_queued_torrents.difference_update(active_hashes | completed_hashes)
 
     # Check active downloads for ETA notifications
     active_downloads = get_active_downloads()
