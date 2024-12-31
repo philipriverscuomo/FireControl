@@ -40,7 +40,7 @@ def get_active_downloads():
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=downloading")
     if response.status_code == 200:
         torrents = response.json()
-        print(f"Active Downloads: {len(torrents)}")  # Debug log
+        print(f"Active Downloads: {len(torrents)} | Data: {torrents}")  # Debug log
         return torrents
     else:
         print("Curses! Couldn't fetch active downloads.")
@@ -52,7 +52,7 @@ def get_queued_torrents():
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=stalled")
     if response.status_code == 200:
         torrents = [torrent for torrent in response.json() if torrent.get("state") == "stalled"]
-        print(f"Queued Torrents: {len(torrents)}")  # Debug log
+        print(f"Queued Torrents: {len(torrents)} | Data: {torrents}")  # Debug log
         return torrents
     else:
         print("Arr, the queue be hidden from us!")
@@ -64,7 +64,7 @@ def get_completed_downloads():
     response = qb_session.get(f"{QB_URL}/api/v2/torrents/info?filter=completed")
     if response.status_code == 200:
         torrents = response.json()
-        print(f"Completed Torrents: {len(torrents)}")  # Debug log
+        print(f"Completed Torrents: {len(torrents)} | Data: {torrents}")  # Debug log
         return torrents
     else:
         print("Shiver me timbers! Can't find completed torrents.")
@@ -107,6 +107,7 @@ async def monitor_qbittorrent():
 
         if torrent_hash not in known_queued_torrents:
             known_queued_torrents.add(torrent_hash)  # Add first to prevent duplicate sends
+            print(f"New torrent queued: {torrent_name} | Position: {queue_position}")  # Debug log
             for guild in client.guilds:
                 for channel in guild.text_channels:
                     try:
@@ -131,6 +132,7 @@ async def monitor_qbittorrent():
         torrent_hash = torrent["hash"]
 
         if torrent_hash not in notified_torrents:
+            print(f"Torrent started downloading: {torrent_name}")  # Debug log
             await asyncio.sleep(90)
 
             active_downloads = get_active_downloads()
@@ -166,6 +168,7 @@ async def monitor_qbittorrent():
         torrent_hash = torrent["hash"]
 
         if torrent_hash not in known_completed_torrents:
+            print(f"Torrent completed: {torrent_name}")  # Debug log
             for guild in client.guilds:
                 for channel in guild.text_channels:
                     try:
