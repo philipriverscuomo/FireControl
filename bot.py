@@ -28,14 +28,25 @@ class TorrentManager:
         self.qb_url = qb_url
         self.qb_username = qb_username
         self.qb_password = qb_password
-        self.session = aiohttp.ClientSession()
+        self.session = None  # Initialize the session as None
         self.authenticated = False
+
+    async def get_session(self):
+        """Ensure the aiohttp session is created."""
+        if self.session is None:
+            try:
+                self.session = aiohttp.ClientSession()
+            except Exception as e:
+                logger.error(f"Failed to initialize aiohttp session: {e}")
+                raise
+        return self.session
 
     async def authenticate(self):
         """Authenticate with qBittorrent WebUI."""
+        session = await self.get_session()
         login_url = f"{self.qb_url}/api/v2/auth/login"
         payload = {"username": self.qb_username, "password": self.qb_password}
-        async with self.session.post(login_url, data=payload) as response:
+        async with session.post(login_url, data=payload) as response:
             if response.status == 200:
                 self.authenticated = True
                 logger.info("Authenticated with qBittorrent.")
@@ -47,8 +58,9 @@ class TorrentManager:
         """Fetch current torrent states."""
         if not self.authenticated:
             await self.authenticate()
+        session = await self.get_session()
         torrents_url = f"{self.qb_url}/api/v2/torrents/info"
-        async with self.session.get(torrents_url) as response:
+        async with session.get(torrents_url) as response:
             if response.status == 200:
                 torrents = await response.json()
                 return {t["hash"]: t for t in torrents}
@@ -57,7 +69,9 @@ class TorrentManager:
                 return {}
 
     async def close(self):
-        await self.session.close()
+        if self.session:
+            await self.session.close()
+            self.session = None
 
 # Initialize components
 torrent_manager = TorrentManager(QB_URL, QB_USERNAME, QB_PASSWORD)
@@ -147,3 +161,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
