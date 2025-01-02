@@ -90,12 +90,12 @@ async def monitor_torrents():
         for torrent_hash, torrent in current_states.items():
             previous_state = previous_states.get(torrent_hash, {}).get("state")
             if torrent["state"] != previous_state:
-                await handle_torrent_change(torrent)
+                await handle_torrent_change(torrent, previous_state)
         previous_states = current_states  # Update previous states
         await asyncio.sleep(30)  # Poll every 30 seconds
 
 # Handle torrent state changes
-async def handle_torrent_change(torrent):
+async def handle_torrent_change(torrent, previous_state):
     guilds = client.guilds  # Get all guilds the bot is part of
     name = torrent["name"]
     state = torrent["state"]
@@ -112,7 +112,7 @@ async def handle_torrent_change(torrent):
                         f"ETA: {torrent['eta'] // 60} minutes."
                     )
                     await channel.send(stats_message)
-                elif state == "uploading":
+                elif state == "stalledUP" and previous_state == "downloading":
                     pirate_phrase = random.choice(PIRATE_PHRASES)
                     message = f"{pirate_phrase} {name} be finished, ye scallywags! 🏴‍☠️"
                     await channel.send(message)
@@ -121,11 +121,8 @@ async def handle_torrent_change(torrent):
                     await channel.send(message)
                 return  # Stop after sending to one channel
 
-@client.event
-async def on_ready():
-    logger.info(f"We have logged in as {client.user}")
-
-    # Send initialization greeting
+async def send_initialization_messages():
+    """Send the initialization greeting and status messages."""
     greeting_message = "Hello, Smithers! You're quite good at turning me on."
     for guild in client.guilds:
         for channel in guild.text_channels:
@@ -137,51 +134,25 @@ async def on_ready():
     stats = await torrent_manager.get_torrent_states()
     total_torrents = len(stats)
     downloading = len([t for t in stats.values() if t["state"] == "downloading"])
-    completed = len([t for t in stats.values() if t["state"] == "uploading"])
-    seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
-
-    initialization_message = (
-        f"Ahoy, mateys! FireControl has been initialized! ⚓
-"
-        f"🏴‍☠️ Total Torrents: {total_torrents}
-"
-        f"🚢 Downloading: {downloading}
-"
-        f"🍻 Completed: {completed}
-"
-        f"⚓ Seeding: {seeding}"
-    )
-
-    for guild in client.guilds:
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).send_messages:
-                await channel.send(initialization_message)
-                break
-
-    client.loop.create_task(monitor_torrents())
-    logger.info(f"We have logged in as {client.user}")
-
-    stats = await torrent_manager.get_torrent_states()
-    total_torrents = len(stats)
-    downloading = len([t for t in stats.values() if t["state"] == "downloading"])
-    completed = len([t for t in stats.values() if t["state"] == "uploading"])
     seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
 
     initialization_message = (
         f"Ahoy, mateys! FireControl has been initialized! ⚓\n"
         f"🏴‍☠️ Total Torrents: {total_torrents}\n"
         f"🚢 Downloading: {downloading}\n"
-        f"🍻 Completed: {completed}\n"
         f"⚓ Seeding: {seeding}"
     )
 
     for guild in client.guilds:
         for channel in guild.text_channels:
-            logger.info(f"Bot has access to channel: {channel.name} in guild: {guild.name}")
             if channel.permissions_for(guild.me).send_messages:
                 await channel.send(initialization_message)
                 break
 
+@client.event
+async def on_ready():
+    logger.info(f"We have logged in as {client.user}")
+    await send_initialization_messages()
     client.loop.create_task(monitor_torrents())
 
 @client.event
@@ -194,9 +165,11 @@ async def on_message(message):
         stats = await torrent_manager.get_torrent_states()
         downloading = len([t for t in stats.values() if t["state"] == "downloading"])
         queued = len([t for t in stats.values() if t["state"] == "queuedDL"])
+        seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
         message_text = (
             f"Arrr, here be the current state of yer downloads:\n"
             f"🚢 Downloading: {downloading} torrents\n"
+            f"⚓ Seeding: {seeding}\n"
             f"📜 Queued: {queued}"
         )
         await message.channel.send(message_text)
