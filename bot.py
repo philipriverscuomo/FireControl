@@ -82,6 +82,16 @@ client = discord.Client(intents=intents)
 
 torrent_manager = TorrentManager(QB_URL, QB_USERNAME, QB_PASSWORD)
 
+# Helper function for iterating through guilds and channels
+def get_available_channel():
+    """Retrieve the first channel the bot can send messages to."""
+    for guild in client.guilds:
+        for channel in guild.text_channels:
+            logger.info(f"Bot has access to channel: {channel.name} in guild: {guild.name}")
+            if channel.permissions_for(guild.me).send_messages:
+                return channel
+    return None
+
 # Background task for monitoring torrents
 async def monitor_torrents():
     previous_states = await torrent_manager.get_torrent_states()  # Initialize with current states
@@ -96,40 +106,37 @@ async def monitor_torrents():
 
 # Handle torrent state changes
 async def handle_torrent_change(torrent, previous_state):
-    guilds = client.guilds  # Get all guilds the bot is part of
     name = torrent["name"]
     state = torrent["state"]
+    channel = get_available_channel()
 
-    for guild in guilds:
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).send_messages:  # Ensure bot can send messages
-                if state == "downloading":
-                    message = f"Avast! The download be startin' fer {name}! ⚓"
-                    await channel.send(message)
-                    await asyncio.sleep(90)  # Wait for stabilization
-                    stats_message = (
-                        f"Arrr, {name} be downloadin' at {torrent['dlspeed']} B/s with {torrent['num_seeds']} mates connected! "
-                        f"ETA: {torrent['eta'] // 60} minutes."
-                    )
-                    await channel.send(stats_message)
-                elif state == "stalledUP" and previous_state == "downloading":
-                    pirate_phrase = random.choice(PIRATE_PHRASES)
-                    message = f"{pirate_phrase} {name} be finished, ye scallywags! 🏴‍☠️"
-                    await channel.send(message)
-                elif state == "queuedDL":
-                    message = f"Arrr, {name} be queued fer download. Rank in queue: {torrent['priority']}!"
-                    await channel.send(message)
-                return  # Stop after sending to one channel
+    if channel:
+        if state == "downloading":
+            message = f"Avast! The download be startin' fer {name}! ⚓"
+            await channel.send(message)
+            await asyncio.sleep(90)  # Wait for stabilization
+            stats_message = (
+                f"Arrr, {name} be downloadin' at {torrent['dlspeed']} B/s with {torrent['num_seeds']} mates connected! "
+                f"ETA: {torrent['eta'] // 60} minutes."
+            )
+            await channel.send(stats_message)
+        elif state == "stalledUP" and previous_state == "downloading":
+            pirate_phrase = random.choice(PIRATE_PHRASES)
+            message = f"{pirate_phrase} {name} be finished, ye scallywags! 🏴‍☠️"
+            await channel.send(message)
+        elif state == "queuedDL":
+            message = f"Arrr, {name} be queued fer download. Rank in queue: {torrent['priority']}!"
+            await channel.send(message)
 
 async def send_initialization_messages():
-    """Send the initialization greeting and status messages."""
+    """Send the initialization greeting, GIF, and status messages."""
     greeting_message = "Hello, Smithers! You're quite good at turning me on."
-    for guild in client.guilds:
-        for channel in guild.text_channels:
-            logger.info(f"Bot has access to channel: {channel.name} in guild: {guild.name}")
-            if channel.permissions_for(guild.me).send_messages:
-                await channel.send(greeting_message)
-                break
+    gif_url = "https://media1.tenor.com/m/ph_1vkJB9TIAAAAd/simpsons-smithers.gif"  # Replace with your desired GIF URL
+
+    channel = get_available_channel()
+    if channel:
+        await channel.send(greeting_message)  # Send the text greeting
+        await channel.send(gif_url)  # Send the GIF as a URL
 
     stats = await torrent_manager.get_torrent_states()
     total_torrents = len(stats)
@@ -143,11 +150,8 @@ async def send_initialization_messages():
         f"⚓ Seeding: {seeding}"
     )
 
-    for guild in client.guilds:
-        for channel in guild.text_channels:
-            if channel.permissions_for(guild.me).send_messages:
-                await channel.send(initialization_message)
-                break
+    if channel:
+        await channel.send(initialization_message)
 
 @client.event
 async def on_ready():
@@ -188,6 +192,24 @@ async def on_message(message):
             await message.channel.send(message_text)
         else:
             await message.channel.send("No downloads be active, ye landlubber!")
+
+    elif message.content.lower() == "!queue":
+        stats = await torrent_manager.get_torrent_states()
+        queued_torrents = [
+            t for t in stats.values() if t["state"] == "queuedDL"
+        ]
+        if queued_torrents:
+            count = len(queued_torrents)
+            message_lines = [
+                f"{i+1}. {t['name']} (Priority: {t.get('priority', 'N/A')})"
+                for i, t in enumerate(queued_torrents)
+            ]
+            message_text = (
+                f"Arrr, there be {count} torrents queued fer download:\n" + "\n".join(message_lines)
+            )
+            await message.channel.send(message_text)
+        else:
+            await message.channel.send("No torrents be queued, ye scallywags!")
 
 async def main():
     await torrent_manager.authenticate()
