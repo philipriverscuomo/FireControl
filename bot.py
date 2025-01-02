@@ -84,14 +84,14 @@ torrent_manager = TorrentManager(QB_URL, QB_USERNAME, QB_PASSWORD)
 
 # Background task for monitoring torrents
 async def monitor_torrents():
-    previous_states = {}
+    previous_states = await torrent_manager.get_torrent_states()  # Initialize with current states
     while True:
         current_states = await torrent_manager.get_torrent_states()
         for torrent_hash, torrent in current_states.items():
             previous_state = previous_states.get(torrent_hash, {}).get("state")
             if torrent["state"] != previous_state:
                 await handle_torrent_change(torrent)
-        previous_states = current_states
+        previous_states = current_states  # Update previous states
         await asyncio.sleep(30)  # Poll every 30 seconds
 
 # Handle torrent state changes
@@ -125,6 +125,42 @@ async def handle_torrent_change(torrent):
 async def on_ready():
     logger.info(f"We have logged in as {client.user}")
 
+    # Send initialization greeting
+    greeting_message = "Hello, Smithers! You're quite good at turning me on."
+    for guild in client.guilds:
+        for channel in guild.text_channels:
+            logger.info(f"Bot has access to channel: {channel.name} in guild: {guild.name}")
+            if channel.permissions_for(guild.me).send_messages:
+                await channel.send(greeting_message)
+                break
+
+    stats = await torrent_manager.get_torrent_states()
+    total_torrents = len(stats)
+    downloading = len([t for t in stats.values() if t["state"] == "downloading"])
+    completed = len([t for t in stats.values() if t["state"] == "uploading"])
+    seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
+
+    initialization_message = (
+        f"Ahoy, mateys! FireControl has been initialized! ⚓
+"
+        f"🏴‍☠️ Total Torrents: {total_torrents}
+"
+        f"🚢 Downloading: {downloading}
+"
+        f"🍻 Completed: {completed}
+"
+        f"⚓ Seeding: {seeding}"
+    )
+
+    for guild in client.guilds:
+        for channel in guild.text_channels:
+            if channel.permissions_for(guild.me).send_messages:
+                await channel.send(initialization_message)
+                break
+
+    client.loop.create_task(monitor_torrents())
+    logger.info(f"We have logged in as {client.user}")
+
     stats = await torrent_manager.get_torrent_states()
     total_torrents = len(stats)
     downloading = len([t for t in stats.values() if t["state"] == "downloading"])
@@ -141,6 +177,7 @@ async def on_ready():
 
     for guild in client.guilds:
         for channel in guild.text_channels:
+            logger.info(f"Bot has access to channel: {channel.name} in guild: {guild.name}")
             if channel.permissions_for(guild.me).send_messages:
                 await channel.send(initialization_message)
                 break
@@ -149,7 +186,7 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    logger.info(f"Received message: {message.content} from {message.author}")
+    logger.info(f"Received message: {message.content} in channel: {message.channel.name} from {message.author}")
     if message.author == client.user:
         return
 
