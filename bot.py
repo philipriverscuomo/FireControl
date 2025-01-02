@@ -134,31 +134,11 @@ async def handle_torrent_change(torrent, previous_state):
             message = f"Arrr, {name} be queued fer download. Rank in queue: {torrent['priority']}!"
             await channel.send(message)
 
-async def send_initialization_messages():
-    """Send the initialization message including GIF and status."""
-    gif_url = "https://media1.tenor.com/m/ph_1vkJB9TIAAAAd/simpsons-smithers.gif"  # Replace with your desired GIF URL
 
-    stats = await torrent_manager.get_torrent_states()
-    total_torrents = len(stats)
-    downloading = len([t for t in stats.values() if t["state"] == "downloading"])
-    seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
-
-    initialization_message = (
-        f"{gif_url}\n"
-        f"Ahoy, mateys! FireControl has been initialized! ⚓\n"
-        f"🏴‍☠️ Total Torrents: {total_torrents}\n"
-        f"🚢 Downloading: {downloading}\n"
-        f"⚓ Seeding: {seeding}"
-    )
-
-    channel = get_available_channel()
-    if channel:
-        await channel.send(initialization_message)
 
 @client.event
 async def on_ready():
     logger.info(f"We have logged in as {client.user}")
-    await send_initialization_messages()
     client.loop.create_task(monitor_torrents())
 
 @client.event
