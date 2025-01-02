@@ -74,11 +74,13 @@ class TorrentManager:
             self.session = None
 
 # Initialize components
-torrent_manager = TorrentManager(QB_URL, QB_USERNAME, QB_PASSWORD)
-
 intents = discord.Intents.default()
 intents.messages = True  # Ensure the bot can read messages
+intents.guilds = True
+intents.message_content = True  # Required for message content handling
 client = discord.Client(intents=intents)
+
+torrent_manager = TorrentManager(QB_URL, QB_USERNAME, QB_PASSWORD)
 
 # Background task for monitoring torrents
 async def monitor_torrents():
@@ -122,10 +124,32 @@ async def handle_torrent_change(torrent):
 @client.event
 async def on_ready():
     logger.info(f"We have logged in as {client.user}")
+
+    stats = await torrent_manager.get_torrent_states()
+    total_torrents = len(stats)
+    downloading = len([t for t in stats.values() if t["state"] == "downloading"])
+    completed = len([t for t in stats.values() if t["state"] == "uploading"])
+    seeding = len([t for t in stats.values() if t["state"] == "stalledUP"])
+
+    initialization_message = (
+        f"Ahoy, mateys! FireControl has been initialized! ⚓\n"
+        f"🏴‍☠️ Total Torrents: {total_torrents}\n"
+        f"🚢 Downloading: {downloading}\n"
+        f"🍻 Completed: {completed}\n"
+        f"⚓ Seeding: {seeding}"
+    )
+
+    for guild in client.guilds:
+        for channel in guild.text_channels:
+            if channel.permissions_for(guild.me).send_messages:
+                await channel.send(initialization_message)
+                break
+
     client.loop.create_task(monitor_torrents())
 
 @client.event
 async def on_message(message):
+    logger.info(f"Received message: {message.content} from {message.author}")
     if message.author == client.user:
         return
 
@@ -161,4 +185,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
