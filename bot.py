@@ -97,10 +97,16 @@ async def monitor_torrents():
     previous_states = await torrent_manager.get_torrent_states()  # Initialize with current states
     while True:
         current_states = await torrent_manager.get_torrent_states()
-        for torrent_hash, torrent in current_states.items():
+        state_changes = {
+            torrent_hash: torrent
+            for torrent_hash, torrent in current_states.items()
+            if torrent["state"] != previous_states.get(torrent_hash, {}).get("state")
+        }
+
+        for torrent_hash, torrent in state_changes.items():
             previous_state = previous_states.get(torrent_hash, {}).get("state")
-            if torrent["state"] != previous_state:
-                await handle_torrent_change(torrent, previous_state)
+            await handle_torrent_change(torrent, previous_state)
+
         previous_states = current_states  # Update previous states
         await asyncio.sleep(30)  # Poll every 30 seconds
 
@@ -116,7 +122,7 @@ async def handle_torrent_change(torrent, previous_state):
             await channel.send(message)
             await asyncio.sleep(90)  # Wait for stabilization
             stats_message = (
-                f"Arrr, {name} be downloadin' at {torrent['dlspeed']} B/s with {torrent['num_seeds']} mates connected! "
+                f"Arrr, {name} be downloadin' at {torrent['dlspeed'] / 1_000_000:.2f} Mbps with {torrent['num_seeds']} mates connected! "
                 f"ETA: {torrent['eta'] // 60} minutes."
             )
             await channel.send(stats_message)
@@ -130,7 +136,6 @@ async def handle_torrent_change(torrent, previous_state):
 
 async def send_initialization_messages():
     """Send the initialization greeting, GIF, and status messages."""
-    greeting_message = "Hello, Smithers! You're quite good at turning me on."
     gif_url = "https://media1.tenor.com/m/ph_1vkJB9TIAAAAd/simpsons-smithers.gif"  # Replace with your desired GIF URL
 
     channel = get_available_channel()
@@ -173,8 +178,8 @@ async def on_message(message):
         message_text = (
             f"Arrr, here be the current state of yer downloads:\n"
             f"🚢 Downloading: {downloading} torrents\n"
-            f"⚓ Seeding: {seeding}\n"
-            f"📜 Queued: {queued}"
+            f"📜 Queued: {queued}\n"
+            f"⚓ Seeding: {seeding}"
         )
         await message.channel.send(message_text)
 
@@ -184,11 +189,14 @@ async def on_message(message):
             t for t in stats.values() if t["state"] == "downloading"
         ]
         if downloading_torrents:
+            count = len(downloading_torrents)
             message_lines = [
-                f"{t['name']}: Speed: {t['dlspeed']} B/s, ETA: {t['eta'] // 60} minutes"
-                for t in downloading_torrents
+                f"{i+1}. {t['name']} (Speed: {t['dlspeed'] / 1_000_000:.2f} Mbps, ETA: {t['eta'] // 60} minutes)"
+                for i, t in enumerate(downloading_torrents)
             ]
-            message_text = "Arrr, here be the ETAs fer yer downloads:\n" + "\n".join(message_lines)
+            message_text = (
+                f"Arrr, there be {count} torrents currently downloadin':\n" + "\n".join(message_lines)
+            )
             await message.channel.send(message_text)
         else:
             await message.channel.send("No downloads be active, ye landlubber!")
